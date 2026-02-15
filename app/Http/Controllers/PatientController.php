@@ -15,12 +15,13 @@ class PatientController extends Controller
         $name = $request->name;
         $age = $request->age;
         $gender = $request->gender;
-        Patient::create([
+        $user = Patient::create([
             'name'   => $request->name,
             'age'    => $request->age,
             'gender' => $request->gender,
         ]);
-        return "success broo";
+
+        return redirect("/analyze/".$user->id);
     }
 
 
