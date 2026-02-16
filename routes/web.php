@@ -20,53 +20,72 @@ Route::get('/', function () {
 
 // --- DASHBOARD (Updated with Analytics) ---
 Route::get('/dashboard', function () {
-    // 1. TABLE DATA: Pagination (Shows 10 newest patients per page)
-    // This variable ($patients) is ONLY for the HTML Table
-    $patients = Patient::latest()->paginate(10);
 
-    // 1. QUEUE LOGIC: Get Waiting Patients sorted by Triage Score
+    // PAGINATED TABLE
+    $patientList = Patient::latest()->paginate(10);
+
+    // LIVE QUEUE
     $queue = Patient::where('status', 'waiting')
-        ->orderByDesc('triage_score') // Highest urgency first
-        ->orderBy('created_at')       // If tie, first arrival first (FIFO)
+        ->orderByDesc('triage_score')
+        ->orderBy('created_at')
         ->get()
-        ->groupBy('diagnosis_department'); // Group by Dept for the dashboard
+        ->groupBy(function ($patient) {
+            return $patient->diagnosis_department ?? 'General';
+        });
 
-    // 2. HISTORY: Treated patients
-    $history = Patient::where('status', 'treated')->latest()->limit(10)->get();
+    // HISTORY
+    $history = Patient::where('status', 'treated')
+        ->latest()
+        ->limit(10)
+        ->get();
 
-    // 3. STATS (Keep your existing stats logic)
+    // OPTIMIZED STATS
+    $total = Patient::count();
+
+    $riskCounts = Patient::select('risk_level', DB::raw('count(*) as total'))
+        ->groupBy('risk_level')
+        ->pluck('total', 'risk_level');
+
+    $waiting = Patient::where('status', 'waiting')->count();
+
+    $criticalWaiting = Patient::where('risk_level', 'High')
+        ->where('status', 'waiting')
+        ->count();
+
     $stats = [
-        'total' => Patient::count(),
-        'waiting' => Patient::where('status', 'waiting')->count(),
-        'critical' => Patient::where('risk_level', 'High')->where('status', 'waiting')->count(),
+        'total'       => $total,
+        'waiting'     => $waiting,
+        'critical'    => $criticalWaiting,
+        'high_risk'   => $riskCounts['High'] ?? 0,
+        'medium_risk' => $riskCounts['Medium'] ?? 0,
+        'low_risk'    => $riskCounts['Low'] ?? 0,
     ];
 
-    // 2. KPI STATS: Count ALL patients in the database
-    // We query the DB directly so stats are accurate even across pages
-    $stats = [
-        'total'       => Patient::count(),
-        'high_risk'   => Patient::where('risk_level', 'High')->count(),
-        'medium_risk' => Patient::where('risk_level', 'Medium')->count(),
-        'low_risk'    => Patient::where('risk_level', 'Low')->count(),
-    ];
-
-    // 3. CHARTS: Database Aggregate for Efficiency
-    // This gets the Top 5 most common conditions
+    // CHART DATA
     $disease_data = Patient::select('condition', DB::raw('count(*) as total'))
         ->whereNotNull('condition')
-        ->where('condition', '!=', '') // Exclude empty strings
+        ->where('condition', '!=', '')
         ->groupBy('condition')
         ->orderByDesc('total')
         ->limit(5)
         ->get();
 
-    // Prepare Data for Chart.js
     $chart_labels = $disease_data->pluck('condition')->toArray();
     $chart_values = $disease_data->pluck('total')->toArray();
 
-    return view('dashboard', compact('patients', 'queue', 'history', 'stats', 'chart_labels', 'chart_values'));
+    return view('dashboard', compact(
+        'patientList',
+        'queue',
+        'history',
+        'stats',
+        'chart_labels',
+        'chart_values'
+    ));
 
 })->middleware(['auth', 'verified'])->name('dashboard');
+
+
+
 
 
 Route::middleware('auth')->group(function () {
@@ -198,7 +217,7 @@ Route::middleware('auth')->group(function () {
 
         // ... [Rest of route] ...
         return view("analyzePatient", compact('data', 'vitals', 'symptoms'));
-    });
+    })->name("analyze");
 
     // --- ADD VITALS (Auto-Trigger AI) ---
     Route::post("/add-vitals/{pid}", function (Request $request, $pid) {

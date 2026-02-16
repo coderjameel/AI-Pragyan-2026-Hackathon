@@ -276,7 +276,7 @@
                 </tr>
                 </thead>
                 <tbody id="infinite-scroll-container">
-                @forelse($patients as $patient)
+                @forelse($patientList as $patient)
                     <tr class="patient-row">
                         <td>
                             <div class="d-flex align-items-center">
@@ -323,8 +323,8 @@
             </table>
 
             <div class="d-none" id="pagination-links">
-                @if($patients instanceof \Illuminate\Pagination\LengthAwarePaginator)
-                    {{ $patients->links() }}
+                @if($patientList instanceof \Illuminate\Pagination\LengthAwarePaginator)
+                    {{ $patientList->links() }}
                 @endif
             </div>
 
